@@ -1,23 +1,26 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
+	"github.com/russross/blackfriday"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
+	"runtime"
 	"strings"
 	"time"
-	"regexp"
 )
 
 // https://play.golang.org/p/N8A5cXa3RM
-func wordCountWithoutLinks(data string) (int) {
-// from https://regex101.com/r/tZ6yK9/3
+func wordCountWithoutLinks(data_string string) int {
+	// from https://regex101.com/r/tZ6yK9/3
+	data := data_string
 	re := regexp.MustCompile("\\[([^\\]]+)\\]\\(([^\\)]+)\\)")
-	data := "#### [POLITICO Florida Playbook: The Spies Effect – Rubio’s Obamacare ‘sabotage’ – Meyer Lansky’s fam wants Cuba compensation – Charter school lobby’s hardball – Help for the Florida Center for Investigative Reporting – The mockingbird’s NRA firepower](http://www.politico.com/tipsheets/florida-playbook/2015/12/politico-florida-playbook-the-spies-effect-rubios-obamacare-sabotage-meyer-lanskys-fam-wants-cuba-compensation-charter-school-lobbys-hardball-help-for-the-florida-center-for-investigative-reporting-the-mockingbirds-nra-firepower-211676)"
 	matches := re.FindAllString(data, -1)
-	fmt.Println(matches)
 	newdata := data
 	for _, match := range matches {
 		if match[0:2] == "[!" {
@@ -25,10 +28,8 @@ func wordCountWithoutLinks(data string) (int) {
 		}
 		newdata = strings.Replace(newdata, match, "", -1)
 	}
-	fmt.Println(newdata)
 	data = newdata
 	matches = re.FindAllString(data, -1)
-	fmt.Println(matches)
 	newdata = data
 	for _, match := range matches {
 		if match[0:3] == "[![" {
@@ -36,8 +37,7 @@ func wordCountWithoutLinks(data string) (int) {
 		}
 		newdata = strings.Replace(newdata, match, "", -1)
 	}
-	fmt.Println(newdata)
-	return len(strings.Split(newdata, " "))
+	return len(strings.Split(strings.TrimSpace(newdata), " "))
 }
 
 func timeTrack(start time.Time, name string) {
@@ -51,30 +51,38 @@ func check(e error) {
 	}
 }
 
-
-func printHTML() {
-	var (
-		cmdOut []byte
-		err    error
-	)
-	cmdName := "pandoc"
-	cmdArgs := []string{"test.md", "-t", "html"}
-	if cmdOut, err = exec.Command(cmdName, cmdArgs...).Output(); err != nil {
-		fmt.Fprintln(os.Stderr, "There was an error running git rev-parse command: ", err)
+func downloadUrl(url string) string {
+	defer timeTrack(time.Now(), "downloadUrl")
+	response, err := http.Get(url)
+	if err != nil {
+		fmt.Printf("%s", err)
 		os.Exit(1)
+	} else {
+		defer response.Body.Close()
+		contents, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			fmt.Printf("%s", err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s\n", string(contents))
+		f, err := os.Create("test.html")
+		check(err)
+		defer f.Close()
+		_, err = f.Write(contents)
+		check(err)
+
 	}
-	sha := string(cmdOut)
-	fmt.Printf(sha)
+	return "test.html"
 }
 
-func main() {
+func parseURL(url string) string {
 	defer timeTrack(time.Now(), "wget")
 	var (
 		cmdOut []byte
 		err    error
 	)
 	cmdName := "pandoc"
-	cmdArgs := []string{"--columns=700", "-t", "markdown", "-s", "-r", "html", "http://www.newyorker.com/culture/culture-desk/bill-murrays-little-christmas-miracle?mbid=rss"}
+	cmdArgs := []string{"--columns=70000", "-t", "markdown", "-s", downloadUrl(url)}
 	if cmdOut, err = exec.Command(cmdName, cmdArgs...).Output(); err != nil {
 		fmt.Fprintln(os.Stderr, "There was an error running git rev-parse command: ", err)
 		os.Exit(1)
@@ -83,72 +91,57 @@ func main() {
 	defer timeTrack(time.Now(), "parsing")
 	result := strings.Split(sha, "\n")
 
-	// Display all elements.
-	start := 0
-	end := 0
-	longest := 0
-	bestStart := 0
-	bestEnd := 0
-	strikes := 0
-	totalWords := 0
-	for i := range result {
-		strLen := len(strings.Split(result[i], " "))
-		totalWords += strLen
-		if (strLen) > 1 {
-			if (strLen) > 10 {
-				if start > 0 {
-					end = i + 1
-				} else {
-					start = i - 1
-				}
-			} else if strikes > 0 {
-				if totalWords > longest {
-					longest = totalWords
-					bestStart = start
-					bestEnd = end
-				}
-				fmt.Printf("\n\nTotal words: %d\n\n", totalWords)
-				start = 0
-				end = 0
-				strikes = 0
-				totalWords = 0
-			} else {
-				strikes++
-			}
-		}
-		fmt.Printf("%d) %d", i, strLen)
-		fmt.Println(result[i])
+	var w bytes.Buffer
 
-	}
-
-	fmt.Printf("%d) %d", bestStart, bestEnd)
-	fmt.Println("BEST RESULT:\n\n")
-	f, err := os.Create("test.md")
-	check(err)
-	defer f.Close()
-	w := bufio.NewWriter(f)
 	lastSentenceGood := false
 	for i := range result {
-		strLen := len(strings.Split(result[i], " "))
-		strLen2 := len(strings.TrimSpace(result[i]))
-
-		if strLen > 20 || strLen2 == 0 {
-			fmt.Printf("%s\n", result[i])
-			w.WriteString(result[i])
-			w.WriteString("\n")
-			if strLen > 20 {
-				lastSentenceGood = true
+		if i < 3 {
+			if strings.Contains(result[i],"title:") {
+				w.WriteString("# ")
+				w.WriteString(strings.Split(strings.TrimSpace(result[i]), "title:")[1])
+				w.WriteString("\n\n")
 			}
-		} else if lastSentenceGood == true && strLen > 7 {
-			fmt.Printf("%s\n", result[i])
-			w.WriteString(result[i])
-			w.WriteString("\n")
-			lastSentenceGood = false
-		} else if strLen > 1 {
-			lastSentenceGood = false
+		} else {
+			strLen := len(strings.Split(strings.TrimSpace(result[i]), " "))
+			strLen2 := wordCountWithoutLinks(result[i])
+
+			fmt.Printf("%d) %d/%d: %s\n", i, strLen, strLen2, result[i])
+			if strLen2 > 10 {
+				w.WriteString(result[i])
+				w.WriteString("\n\n")
+				lastSentenceGood = true
+			} else if lastSentenceGood == true && strLen2 > 3 {
+				w.WriteString(result[i])
+				w.WriteString("\n\n")
+				lastSentenceGood = false
+			} else if strLen > 1 {
+				lastSentenceGood = false
+			}
 		}
 	}
-	w.Flush()
+
 	fmt.Println("WEB RESULT:\n\n")
-	printHTML()
+	output := blackfriday.MarkdownCommon(w.Bytes())
+	return string(output)
+}
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	defer timeTrack(time.Now(), "indexHandler")
+	url := r.URL.Query()["url"]
+	if len(url) > 0 {
+		result := parseURL(url[0])
+		fmt.Fprintln(w, result)
+	}
+	fmt.Fprintln(w, "No url")
+}
+
+func startServer() {
+	runtime.GOMAXPROCS(runtime.NumCPU() - 1) // one core for wrk
+
+	http.HandleFunc("/", indexHandler)
+	http.ListenAndServe(":4000", nil)
+	fmt.Println("Fin Bench running on Port 4000")
+}
+func main() {
+	startServer()
 }
