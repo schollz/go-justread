@@ -74,13 +74,13 @@ func downloadUrl(url string) string {
 	//var re = regexp.MustCompile(`</?\w+((\s+\w+(\s*=\s*(?:".*?"|'.*?'|[^'">\s]+))?)+\s*|\s*)/?>`)
 	if err != nil {
 		log.Printf("%s", err)
-		os.Exit(1)
+		return "error"
 	} else {
 		defer response.Body.Close()
 		contents, err := ioutil.ReadAll(response.Body)
 		if err != nil {
 			log.Printf("%s", err)
-			os.Exit(1)
+			return "error"
 		}
 		f, err := os.Create("test.html")
 		check(err)
@@ -108,7 +108,7 @@ func downloadUrl(url string) string {
 					strings.Contains(result[j], "<img") ||
 					strings.Contains(result[j], "<img") ||
 					strings.Contains(result[j], "</img") ||
-          strings.Contains(result[j], "<input") ||
+					strings.Contains(result[j], "<input") ||
 					(strings.TrimSpace(strings.Replace(result[i], "/", "", -1)) == strings.TrimSpace(result[j])) ||
 					len(result[j]) < 3 {
 
@@ -128,6 +128,9 @@ func downloadUrl(url string) string {
 func parseURL(url string) string {
 	start := time.Now()
 	file := downloadUrl(url)
+	if file == "error" {
+		return file
+	}
 	elapsed := time.Since(start)
 	log.Printf("downloading took %s", elapsed)
 
@@ -140,7 +143,6 @@ func parseURL(url string) string {
 	cmdArgs := []string{"--columns=70000", "-t", "markdown", "-s", file}
 	if cmdOut, err = exec.Command(cmdName, cmdArgs...).Output(); err != nil {
 		log.Println("There was an error running: ", err)
-		os.Exit(1)
 	}
 	sha := string(cmdOut)
 	result := strings.Split(sha, "\n")
@@ -164,14 +166,13 @@ func parseURL(url string) string {
 			strLen2 := wordCountWithoutLinks(result[i])
 
 			//fmt.Printf("%d) %d/%d: %s\n", i, strLen, strLen2, result[i])
-			if strLen2 > 20 && !(
-          strings.Contains(result[i], "Share on Twitter") ||
-          strings.Contains(result[i], "Sign in to") ||
-          strings.Contains(result[i], "Sign in or") ||
-          strings.Contains(result[i], "Comments") ||
-          strings.Contains(result[i], "Play Videos") ||
-          strings.Contains(result[i], "Your comment:") ||
-          strings.Contains(result[i], "You’ll receive free")) {
+			if strLen2 > 20 && !(strings.Contains(result[i], "Share on Twitter") ||
+				strings.Contains(result[i], "Sign in to") ||
+				strings.Contains(result[i], "Sign in or") ||
+				strings.Contains(result[i], "Comments") ||
+				strings.Contains(result[i], "Play Videos") ||
+				strings.Contains(result[i], "Your comment:") ||
+				strings.Contains(result[i], "You’ll receive free")) {
 				w.WriteString(result[i])
 				w.WriteString("\n\n")
 				lastSentenceGood = true
@@ -652,6 +653,8 @@ footer { position: fixed; bottom: 0; right: 0; height: 20px; }
                </form>
                <p class="lead">...or use /?url=X in the browser.</p>
 
+               <p class="lead">ERROR</p>
+
       </div>
       
     </main>
@@ -666,15 +669,23 @@ footer { position: fixed; bottom: 0; right: 0; height: 20px; }
 		defer timeTrack(time.Now(), "GET REQUEST")
 		url := r.URL.Query()["url"]
 		if len(url) > 0 {
-			fmt.Fprintln(w, parseURL(url[0]))
+			page := parseURL(url[0])
+			if page == "error" {
+				page = strings.Replace(indexPage, "ERROR", "An error occured.", -1)
+			}
+			fmt.Fprintln(w, page)
 		} else {
-			fmt.Fprintln(w, indexPage)
+			fmt.Fprintln(w, strings.Replace(indexPage, "ERROR", "", -1))
 		}
 	} else {
 		defer timeTrack(time.Now(), "POST REQUEST")
 		r.ParseForm()
 		url := r.Form["group"][0]
-		fmt.Fprintln(w, parseURL(url))
+		page := parseURL(url)
+		if page == "error" {
+			page = strings.Replace(indexPage, "ERROR", "An error occured.", -1)
+		}
+		fmt.Fprintln(w, page)
 	}
 }
 
