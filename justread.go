@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"github.com/russross/blackfriday"
@@ -69,44 +70,83 @@ func check(e error) {
 }
 
 func downloadUrl(url string) string {
-	defer timeTrack(time.Now(), "downloadUrl")
 	response, err := http.Get(url)
+	//var re = regexp.MustCompile(`</?\w+((\s+\w+(\s*=\s*(?:".*?"|'.*?'|[^'">\s]+))?)+\s*|\s*)/?>`)
 	if err != nil {
-		fmt.Printf("%s", err)
+		log.Printf("%s", err)
 		os.Exit(1)
 	} else {
 		defer response.Body.Close()
 		contents, err := ioutil.ReadAll(response.Body)
 		if err != nil {
-			fmt.Printf("%s", err)
+			log.Printf("%s", err)
 			os.Exit(1)
 		}
-		fmt.Printf("%s\n", string(contents))
 		f, err := os.Create("test.html")
 		check(err)
 		defer f.Close()
-		_, err = f.Write(contents)
-		check(err)
+		content_string := string(contents[:])
+		result := strings.Split(content_string, "\n")
+		var buffer bytes.Buffer
+		for i := range result {
+			newString := strings.Replace(result[i], "<", "\n<", -1)
+			buffer.WriteString(strings.Replace(newString, ">", ">\n", -1))
+		}
+
+		result = strings.Split(buffer.String(), "\n")
+		w := bufio.NewWriter(f)
+		for i := range result {
+			if i > 0 {
+				j := i - 1
+				if len(result[j]) > 500 ||
+					strings.Contains(result[j], "div>") ||
+					strings.Contains(result[j], "<div") ||
+					strings.Contains(result[j], "</div") ||
+					strings.Contains(result[j], "<meta") ||
+					strings.Contains(result[j], "<form") ||
+					strings.Contains(result[j], "</form") ||
+					strings.Contains(result[j], "<img") ||
+					strings.Contains(result[j], "<img") ||
+					strings.Contains(result[j], "</img") ||
+					strings.Contains(result[j], "<input") ||
+					(strings.TrimSpace(strings.Replace(result[i], "/", "", -1)) == strings.TrimSpace(result[j])) ||
+					len(result[j]) < 3 {
+
+				} else {
+					w.WriteString(strings.TrimSpace(result[j]))
+					w.WriteString("\n")
+
+				}
+
+			}
+		}
 
 	}
 	return "test.html"
 }
 
 func parseURL(url string) string {
-	defer timeTrack(time.Now(), "wget")
+	start := time.Now()
+	file := downloadUrl(url)
+	elapsed := time.Since(start)
+	log.Printf("downloading took %s", elapsed)
+
+	start = time.Now()
 	var (
 		cmdOut []byte
 		err    error
 	)
 	cmdName := "pandoc"
-	cmdArgs := []string{"--columns=70000", "-t", "markdown", "-s", downloadUrl(url)}
+	cmdArgs := []string{"--columns=70000", "-t", "markdown", "-s", file}
 	if cmdOut, err = exec.Command(cmdName, cmdArgs...).Output(); err != nil {
-		fmt.Fprintln(os.Stderr, "There was an error running git rev-parse command: ", err)
+		log.Println("There was an error running: ", err)
 		os.Exit(1)
 	}
 	sha := string(cmdOut)
-	defer timeTrack(time.Now(), "parsing")
 	result := strings.Split(sha, "\n")
+
+	elapsed = time.Since(start)
+	log.Printf("pandoc took %s", elapsed)
 
 	var w bytes.Buffer
 
@@ -123,7 +163,7 @@ func parseURL(url string) string {
 			strLen := len(strings.Split(result[i], " "))
 			strLen2 := wordCountWithoutLinks(result[i])
 
-			fmt.Printf("%d) %d/%d: %s\n", i, strLen, strLen2, result[i])
+			//fmt.Printf("%d) %d/%d: %s\n", i, strLen, strLen2, result[i])
 			if strLen2 > 20 {
 				w.WriteString(result[i])
 				w.WriteString("\n\n")
@@ -138,7 +178,6 @@ func parseURL(url string) string {
 		}
 	}
 
-	fmt.Println("WEB RESULT:\n\n")
 	output := blackfriday.MarkdownCommon(w.Bytes())
 
 	front := `<!DOCTYPE html>
@@ -472,8 +511,8 @@ func parseURL(url string) string {
 
 </body>
 </html>`
-	s := []string{front, string(output),back};
-	s2 := strings.Replace(string(strings.Join(s, " ")),"ORIGINAL_URL",url,-1)
+	s := []string{front, string(output), back}
+	s2 := strings.Replace(string(strings.Join(s, " ")), "ORIGINAL_URL", url, -1)
 	return s2
 }
 
@@ -616,8 +655,8 @@ footer { position: fixed; bottom: 0; right: 0; height: 20px; }
 </html>
 `
 
-	defer timeTrack(time.Now(), "indexHandler")
 	if r.Method == "GET" {
+		defer timeTrack(time.Now(), "GET REQUEST")
 		url := r.URL.Query()["url"]
 		if len(url) > 0 {
 			fmt.Fprintln(w, parseURL(url[0]))
@@ -625,6 +664,7 @@ footer { position: fixed; bottom: 0; right: 0; height: 20px; }
 			fmt.Fprintln(w, indexPage)
 		}
 	} else {
+		defer timeTrack(time.Now(), "POST REQUEST")
 		r.ParseForm()
 		url := r.Form["group"][0]
 		fmt.Fprintln(w, parseURL(url))
@@ -632,15 +672,11 @@ footer { position: fixed; bottom: 0; right: 0; height: 20px; }
 }
 
 func startServer() {
-	fmt.Printf(processString("The Middle Class Is No Longer The Majority in the U.S. {.article-title itemprop=“headline”}"))
 	runtime.GOMAXPROCS(runtime.NumCPU() - 1) // one core for wrk
 	http.HandleFunc("/", indexHandler)
 	http.ListenAndServe(":4000", nil)
 	fmt.Println("Fin Bench running on Port 4000")
 }
 func main() {
-startServer()
-result := parseURL("http://feeds.reuters.com/~r/reuters/topNews/~3/7lhCFz6edso/story01.htm")
-fmt.Println(result)
-
+	startServer()
 }
