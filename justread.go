@@ -108,7 +108,7 @@ func downloadUrl(url string) string {
 					strings.Contains(result[j], "<img") ||
 					strings.Contains(result[j], "<img") ||
 					strings.Contains(result[j], "</img") ||
-					strings.Contains(result[j], "<input") ||
+          strings.Contains(result[j], "<input") ||
 					(strings.TrimSpace(strings.Replace(result[i], "/", "", -1)) == strings.TrimSpace(result[j])) ||
 					len(result[j]) < 3 {
 
@@ -164,7 +164,14 @@ func parseURL(url string) string {
 			strLen2 := wordCountWithoutLinks(result[i])
 
 			//fmt.Printf("%d) %d/%d: %s\n", i, strLen, strLen2, result[i])
-			if strLen2 > 20 {
+			if strLen2 > 20 && !(
+          strings.Contains(result[i], "Share on Twitter") ||
+          strings.Contains(result[i], "Sign in to") ||
+          strings.Contains(result[i], "Sign in or") ||
+          strings.Contains(result[i], "Comments") ||
+          strings.Contains(result[i], "Play Videos") ||
+          strings.Contains(result[i], "Your comment:") ||
+          strings.Contains(result[i], "You’ll receive free")) {
 				w.WriteString(result[i])
 				w.WriteString("\n\n")
 				lastSentenceGood = true
