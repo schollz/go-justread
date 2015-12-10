@@ -8,7 +8,37 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"regexp"
 )
+
+// https://play.golang.org/p/N8A5cXa3RM
+func wordCountWithoutLinks(data string) (int) {
+// from https://regex101.com/r/tZ6yK9/3
+	re := regexp.MustCompile("\\[([^\\]]+)\\]\\(([^\\)]+)\\)")
+	data := "#### [POLITICO Florida Playbook: The Spies Effect – Rubio’s Obamacare ‘sabotage’ – Meyer Lansky’s fam wants Cuba compensation – Charter school lobby’s hardball – Help for the Florida Center for Investigative Reporting – The mockingbird’s NRA firepower](http://www.politico.com/tipsheets/florida-playbook/2015/12/politico-florida-playbook-the-spies-effect-rubios-obamacare-sabotage-meyer-lanskys-fam-wants-cuba-compensation-charter-school-lobbys-hardball-help-for-the-florida-center-for-investigative-reporting-the-mockingbirds-nra-firepower-211676)"
+	matches := re.FindAllString(data, -1)
+	fmt.Println(matches)
+	newdata := data
+	for _, match := range matches {
+		if match[0:2] == "[!" {
+			match = match[2:]
+		}
+		newdata = strings.Replace(newdata, match, "", -1)
+	}
+	fmt.Println(newdata)
+	data = newdata
+	matches = re.FindAllString(data, -1)
+	fmt.Println(matches)
+	newdata = data
+	for _, match := range matches {
+		if match[0:3] == "[![" {
+			match = match[2:]
+		}
+		newdata = strings.Replace(newdata, match, "", -1)
+	}
+	fmt.Println(newdata)
+	return len(strings.Split(newdata, " "))
+}
 
 func timeTrack(start time.Time, name string) {
 	elapsed := time.Since(start)
